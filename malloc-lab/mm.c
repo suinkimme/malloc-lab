@@ -42,11 +42,53 @@ team_t team = {
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
+/* Basic constants and macros */
+#define WSIZE 4
+#define DSIZE 8
+#define CHUNKSIZE (1 << 12)
+
+#define MAX(x, y)
+
+/* Pack a size and allocated bit into a word */
+#define PACK(size, alloc)
+
+/* Read and write a word at address p */
+#define GET(p)
+#define PUT(p, val)
+
+/* Read the size and allocated fields from address p */
+#define GET_SIZE(p)
+#define GET_ALLOC(p)
+
+/* Given block ptr bp, compute address of its header and footer */
+#define HDRP(bp)
+#define FTRP(bp)
+
+/* Given block ptr bp, compute address of next and previous blocks */
+#define NEXT_BLKP(bp)
+#define PREV_BLKP(bp)
+
 /*
  * mm_init - initialize the malloc package.
  */
 int mm_init(void)
 {
+    /* Create the initial empty heap */
+    if ((heap_listp = mem_sbrk(4 * WSIZE)) == (void *) - 1) {
+        return -1;
+    }
+
+    PUT(heap_listp, 0);
+    PUT(heap_listp + (1 * WSIZE), PACK(DSIZE, 1));
+    PUT(heap_listp + (2 * WSIZE), PACK(DSIZE, 1));
+    PUT(heap_listp + (3 * WSIZE), PACK(0, 1));
+    heap_listp += (2 * WSIZE);
+
+    /* Extend the empty heap with a free block of CHUNKSIZE bytes */
+    if (extend_heap(CHUNKSIZE / WSIZE) == NULL) {
+        return -1;
+    }
+
     return 0;
 }
 
