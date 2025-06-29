@@ -9,7 +9,8 @@
             "args": [
                 "-V",
                 "-f",
-                "short1-bal.rep",
+                // "short1-bal.rep",
+                "traces/amptjp-bal.rep",
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/malloc-lab",
