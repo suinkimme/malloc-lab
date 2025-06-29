@@ -6,12 +6,12 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/malloc-lab/mdriver",
-            "args": [
-                "-V",
-                "-f",
-                // "short1-bal.rep",
-                "traces/amptjp-bal.rep",
-            ],
+            // "args": [
+            //     "-V",
+            //     "-f",
+            //     // "short1-bal.rep",
+            //     "traces/amptjp-bal.rep",
+            // ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/malloc-lab",
             "environment": [],
