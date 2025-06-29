@@ -43,50 +43,65 @@ team_t team = {
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 /* Basic constants and macros */
-#define WSIZE 4
-#define DSIZE 8
-#define CHUNKSIZE (1 << 12)
+#define WSIZE 4 // 워드 크기 4 바이트
+#define DSIZE 8 // 더블 워드 크기 8 바이트
+#define CHUNKSIZE (1 << 12) // 힙을 확장할 때 기본 크기 4096 바이트
 
-#define MAX(x, y) ((x) > (y) ? (x) : (y))
+#define MAX(x, y) ((x) > (y) ? (x) : (y)) // 걍 뭐 둘 중에 더 큰거 반환
 
 /* Pack a size and allocated bit into a word */
-#define PACK(size, alloc) ((size) | (alloc))
+#define PACK(size, alloc) ((size) | (alloc)) // 블록 header/footer에 저장할 값 구성 (크기 + 할당 비트)
 
 /* Read and write a word at address p */
-#define GET(p) (*(unsigned int *)(p))
-#define PUT(p, val) (*(unsigned int *)(p) = (val))
+#define GET(p) (*(unsigned int *)(p)) // 포인터 위치의 4바이트 값을 읽음
+#define PUT(p, val) (*(unsigned int *)(p) = (val)) // 포인터 위치에 값을 씀? 덮어쓴다?
 
 /* Read the size and allocated fields from address p */
-#define GET_SIZE(p) (GET(p) & ~0x7)
-#define GET_ALLOC(p) (GET(p) & 0x1)
+#define GET_SIZE(p) (GET(p) & ~0x7) // 전체 값에서 하위 3비트(할당 여부 플래그)를 제거한 순수한 블록 크기
+#define GET_ALLOC(p) (GET(p) & 0x1) // 하위 비트가 1이면 할당된다. 0 이면 할당 안함
 
 /* Given block ptr bp, compute address of its header and footer */
-#define HDRP(bp) ((char *)(bp) - WSIZE)
-#define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
+#define HDRP(bp) ((char *)(bp) - WSIZE) // 블록 포인터로부터 헤더 위치
+#define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE) // 블록 포인터로부터 푸터 위치
 
 /* Given block ptr bp, compute address of next and previous blocks */
-#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
-#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
+#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE))) // 다음 블록의 포인터
+#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE))) // 다음 블록의 포인터
 
 /* Global variables */
-static char *heap_listp = 0;
+static char *heap_listp = 0; // 힙의 시작을 가리키는 포인터
 
+// 인접한 블록이 비어있다면, 하나의 큰 블록으로 합쳐서 외부 단편화를 줄인다.
 static void *coalesce(void *bp) {
+    // 현재 블록을 기준으로 이전/다음 브롥이 할당 중인지 확인한다.
     size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
-    size_t size = GET_SIZE(HDRP(bp));
+    size_t size = GET_SIZE(HDRP(bp)); // 현재 블록의 크기
 
+    // 앞/뒤 모두 할당되어 있음
+    // 아무것도 안함
     if (prev_alloc && next_alloc) {
         return bp;
+    // 앞은 할당, 뒤는 비어있음
+    // 다음 블록이 비어있으므로 병합 가능함, 현재 블록과 다음 블록의 크기를 합쳐서 새 블록을 구성
+    // 새 블록의 헤더/풋터를 모두 size, alloc=0으로 설정
     } else if (prev_alloc && !next_alloc) {
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
         PUT(HDRP(bp), PACK(size, 0));
         PUT(FTRP(bp), PACK(size, 0));
+    // 앞은 비어있음, 뒤는 할당
+    // 이전 블록이 비어있으므로 병합 가능함, 이전 블록과 현재 블록의 크기를 합침
+    // 헤더는 이전 블록의 위치에, 풋터는 현재 블록의 끝에 병합 후 반환 포인터 bp를 이전 블록으로 갱신
     } else if (!prev_alloc && next_alloc) {
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
         PUT(FTRP(bp), PACK(size, 0));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
         bp = PREV_BLKP(bp);
+    // 앞/뒤 모두 빈 블록
+    // 총 3개의 블록을 하나로 병합
+    // 이전 + 현재 + 다음 블록
+    // 헤더는 이전 블록의 헤더에, 풋터는 다음 블록의 풋터에
+    // 포인터 bp는 병합된 시작 주소(이전 블록)로 이동
     } else {
         size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(HDRP(NEXT_BLKP(bp)));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
@@ -94,7 +109,7 @@ static void *coalesce(void *bp) {
         bp = PREV_BLKP(bp);
     }
 
-    return bp;
+    return bp; // 병합된 혹은 병합되지 않은 블록의 시작 포인터를 반환함
 }
 
 static void *extend_heap(size_t words) {
