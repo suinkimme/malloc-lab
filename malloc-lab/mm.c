@@ -112,22 +112,39 @@ static void *coalesce(void *bp) {
     return bp; // 병합된 혹은 병합되지 않은 블록의 시작 포인터를 반환함
 }
 
+// 힙 공간을 확장할 때 사용한다.
+// malloc이 요청한 크기의 블록을 못 찾을 때, 새로운 메모리 공간을 확보하기 위해 호출되는 함수다.
 static void *extend_heap(size_t words) {
     char *bp;
     size_t size;
 
-    /* Allocate an even number of words to maintain alignment */
+    // 정렬 단위 맞춰서 크기 계산
+    // 메모리는 더블 워드(8바이트) 정렬이 되어야 한다.
+    // 홀수 개의 워드가 들어오면, +1 해서 짝수로 만들어 정렬 맞춤
+    // 결국 size는 8의 배수임
+    // 예:
+    // words = 5 -> (5 + 1) * 4 = 24
+    // words = 6 -> 6 * 4 = 24
     size = (words % 2) ? (words + 1) * WSIZE : words * WSIZE;
+
+    // 힙 공간 확장
+    // mem_sbrk()는 힙 포인터를 size 만큼 증가시키고, 그 확정된 영역의 시작 주소를 반환함
+    // bp: 새 블록의 payload 시작 주소 (즉, header 바로 뒤 주소)
     if ((long)(bp = mem_sbrk(size)) == -1) {
         return NULL;
     }
 
-    /* Initialize free block header/footer and the epilogue header */
-    PUT(HDRP(bp), PACK(size, 0));
-    PUT(FTRP(bp), PACK(size, 0));
-    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));
+    // 블록 초기화 (헤더/푸터 설정 + 에필로그)
+    // [ Header | Payload .... | Footer ]
+    // Header: 블록의 크기 + 할당 여부
+    // Payload: 사용자가 쓸 수 있는 데이터 영역
+    // Footer: 헤더 정보의 복사본 (경계 태그)
+    PUT(HDRP(bp), PACK(size, 0)); // 헤더 - HDRP(bp) -> 헤더 위치 계산(bp - WSIZE) | PACK(size, 0) -> size | 0x0으로 size만 설정, 할당 안됨 표시
+    PUT(FTRP(bp), PACK(size, 0)); // 푸터 - FTRP(bp) -> 푸터 위치 계산(bp + size - DSIZE) | PACK(size, 0) -> free 상태 표기
+    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1)); // 새 에필로그 헤더 -> 할당기의 구조에서 항상 마지막 블록 뒤에 에필로그가 있어야 하기 때문이다.
 
-    /* Coalesce if the previous block was free */
+    // 앞쪽 블록이 free일 수 있으니, bp와 인점한 블록들을 병합함
+    // 연결된 블록의 시작 주소를 반환 그러면 coalesce()에서 알아서 처리함
     return coalesce(bp);
 }
 
