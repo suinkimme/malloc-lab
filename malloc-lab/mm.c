@@ -268,10 +268,21 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
+    // 사이즈는 블록 전체의 크기다.
+    /*
+    [ Header | Payload .... | Footer ]
+        ^                         ^
+        |                         |
+        HDRP(ptr)             FTRP(ptr)
+
+        블록 전체 크기 = Header + Payload (+ Padding) + Footer
+    */
     size_t size = GET_SIZE(HDRP(ptr));
 
+    // 가용 블럭의 헤더와 푸터를 비운다.
     PUT(HDRP(ptr), PACK(size, 0));
     PUT(FTRP(ptr), PACK(size, 0));
+    // 그러고 앞/뒤 확인하고 케이스에 맞게 가용 블럭을 병합한다.
     coalesce(ptr);
 }
 
