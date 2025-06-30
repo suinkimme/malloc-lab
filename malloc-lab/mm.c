@@ -254,6 +254,7 @@ void *mm_malloc(size_t size)
         return bp;
     }
 
+    // 적당한 가용 블럭이 없으면 힙 영역을 넓혀야함
     extendsize = MAX(asize, CHUNKSIZE);
     if ((bp = extend_heap(extendsize / WSIZE)) == NULL) {
         return NULL;
