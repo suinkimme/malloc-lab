@@ -149,26 +149,44 @@ static void *extend_heap(size_t words) {
 }
 
 // asize: 정렬/오버헤드 포함된 요청 크기 (즉, 조정된 블록 크기) = malloc(size) 요청이 들어왔을 때 할당기는 내부에서 요청된 size를 바로 쓰지 않고 메모리 정렬, 헤더/푸터 오버헤드, 최소 블록 크기 등을 고려해서 실제로 할당할 크기를 계산함
-static void *find_fit(size_t asize) {
-    // 현재 검사 중인 블록의 포인터
-    void *bp;
+// static void *find_fit(size_t asize) {
+//     // 현재 검사 중인 블록의 포인터
+//     void *bp;
 
-    // bp = heap_listp: 첫 번째 블록부터 검사 시작
-    // GET_SIZE(HDRP(bp)) > 0: 종료 조건, 에필로그 블록(크기 0)에 도달하면 탐색 종료
-    // bp = NEXT_BLKP(bp) 다음 블록으로 이동하는 매크로
+//     // bp = heap_listp: 첫 번째 블록부터 검사 시작
+//     // GET_SIZE(HDRP(bp)) > 0: 종료 조건, 에필로그 블록(크기 0)에 도달하면 탐색 종료
+//     // bp = NEXT_BLKP(bp) 다음 블록으로 이동하는 매크로
+//     for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+//         // !GET_ALLOC(...) 이 블록이 free인지 확인하는거임
+//         // asize <= GET_SIZE(...) 요청한 크기를 수용할 수 있는 확인하는 거임
+//         // 조건이 맞으면 bp 반환 = First Fit 전략
+//         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+//             // 조건이 맞으면 바로 bp 반환 = First fit 전략임
+//             return bp;
+//         }
+//     }
+
+//     // 끝까지 가용 블록을 못 찾으면 NULL 반환
+//     // 이 경우 malloc()은 extend_heap()을 호출해서 힙을 늘릴 수 있음
+//     return NULL;
+// }
+
+static void *find_fit(size_t asize) {
+    void *bp;
+    void *best_fit = NULL;
+    size_t min_diff = (size_t) - 1;
+    
     for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-        // !GET_ALLOC(...) 이 블록이 free인지 확인하는거임
-        // asize <= GET_SIZE(...) 요청한 크기를 수용할 수 있는 확인하는 거임
-        // 조건이 맞으면 bp 반환 = First Fit 전략
         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
-            // 조건이 맞으면 바로 bp 반환 = First fit 전략임
-            return bp;
+            size_t diff = GET_SIZE(HDRP(bp)) - asize;
+            if (diff < min_diff) {
+                min_diff = diff;
+                best_fit = bp;
+            }
         }
     }
-
-    // 끝까지 가용 블록을 못 찾으면 NULL 반환
-    // 이 경우 malloc()은 extend_heap()을 호출해서 힙을 늘릴 수 있음
-    return NULL;
+    
+    return best_fit;
 }
 
 // 블록을 할당하고, 남는 공간이 충분하면 가용 블록으로 분할하는 역할
