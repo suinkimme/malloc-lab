@@ -171,15 +171,24 @@ static void *find_fit(size_t asize) {
     return NULL;
 }
 
+// 블록을 할당하고, 남는 공간이 충분하면 가용 블록으로 분할하는 역할
+// bp: 가용 블록의 포인터 (할당기로부터 찾은 블록 시작 주소)
+// asize: 할당하고자 하는 조정된 블록 크기 (payload + header/footer + 정렬 포함)
 static void place(void *bp, size_t asize) {
-    size_t csize = GET_SIZE(HDRP(bp));
+    // 현재 가용 블록의 전체 크기
+    size_t csize = GET_SIZE(HDRP(bp)); // 헤더에서 블록 크기를 읽어옴
 
+    // 블록이 너무 커서 나눌 수 있는 경우 (분할) -> 내부 단편화가 발생하는걸 최대한으로 줄이기 위함
     if ((csize - asize) >= (2 * DSIZE)) {
+        // 앞 부분은 요청된 크기로 할당 처리함
         PUT(HDRP(bp), PACK(asize, 1));
         PUT(FTRP(bp), PACK(asize, 1));
+        // 다음 블록 위치로 이동
         bp = NEXT_BLKP(bp);
+        // 남은 공간을 새로운 사용 블록으로 설정
         PUT(HDRP(bp), PACK(csize - asize, 0));
         PUT(FTRP(bp), PACK(csize - asize, 0));
+    // 분할이 불가능한 경우 그냥 통째로 할당함
     } else {
         PUT(HDRP(bp), PACK(csize, 1));
         PUT(FTRP(bp), PACK(csize, 1));
