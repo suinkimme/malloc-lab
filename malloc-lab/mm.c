@@ -70,6 +70,7 @@ team_t team = {
 
 /* Global variables */
 static char *heap_listp = 0; // 힙의 시작을 가리키는 포인터
+static char *rover = 0;
 
 // 인접한 블록이 비어있다면, 하나의 큰 블록으로 합쳐서 외부 단편화를 줄인다.
 static void *coalesce(void *bp) {
@@ -148,7 +149,7 @@ static void *extend_heap(size_t words) {
     return coalesce(bp);
 }
 
-// asize: 정렬/오버헤드 포함된 요청 크기 (즉, 조정된 블록 크기) = malloc(size) 요청이 들어왔을 때 할당기는 내부에서 요청된 size를 바로 쓰지 않고 메모리 정렬, 헤더/푸터 오버헤드, 최소 블록 크기 등을 고려해서 실제로 할당할 크기를 계산함
+// // asize: 정렬/오버헤드 포함된 요청 크기 (즉, 조정된 블록 크기) = malloc(size) 요청이 들어왔을 때 할당기는 내부에서 요청된 size를 바로 쓰지 않고 메모리 정렬, 헤더/푸터 오버헤드, 최소 블록 크기 등을 고려해서 실제로 할당할 크기를 계산함
 // static void *find_fit(size_t asize) {
 //     // 현재 검사 중인 블록의 포인터
 //     void *bp;
@@ -171,22 +172,51 @@ static void *extend_heap(size_t words) {
 //     return NULL;
 // }
 
+// static void *find_fit(size_t asize) {
+//     void *bp;
+//     void *best_fit = NULL;
+//     size_t min_diff = (size_t) - 1;
+    
+//     for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+//         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+//             size_t diff = GET_SIZE(HDRP(bp)) - asize;
+//             if (diff < min_diff) {
+//                 min_diff = diff;
+//                 best_fit = bp;
+//             }
+//         }
+//     }
+    
+//     return best_fit;
+// }
+
 static void *find_fit(size_t asize) {
     void *bp;
-    void *best_fit = NULL;
-    size_t min_diff = (size_t) - 1;
     
-    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+    // rover가 NULL이거나 초기화되지 않은 경우, heap_listp부터 시작
+    if (rover == NULL) {
+        rover = heap_listp;
+    }
+    
+    // 첫 번째 패스: rover 위치부터 끝까지 검색
+    for (bp = rover; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
-            size_t diff = GET_SIZE(HDRP(bp)) - asize;
-            if (diff < min_diff) {
-                min_diff = diff;
-                best_fit = bp;
-            }
+            rover = NEXT_BLKP(bp); // 다음 검색을 위해 rover 업데이트
+            return bp;
         }
     }
     
-    return best_fit;
+    // 두 번째 패스: 시작부터 rover 위치까지 검색
+    for (bp = heap_listp; bp < rover; bp = NEXT_BLKP(bp)) {
+        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+            rover = NEXT_BLKP(bp); // 다음 검색을 위해 rover 업데이트
+            return bp;
+        }
+    }
+    
+    // 적합한 블록을 찾지 못한 경우
+    rover = heap_listp; // rover를 초기 위치로 리셋
+    return NULL;
 }
 
 // 블록을 할당하고, 남는 공간이 충분하면 가용 블록으로 분할하는 역할
@@ -201,11 +231,14 @@ static void place(void *bp, size_t asize) {
         // 앞 부분은 요청된 크기로 할당 처리함
         PUT(HDRP(bp), PACK(asize, 1));
         PUT(FTRP(bp), PACK(asize, 1));
-        // 다음 블록 위치로 이동
-        bp = NEXT_BLKP(bp);
-        // 남은 공간을 새로운 사용 블록으로 설정
-        PUT(HDRP(bp), PACK(csize - asize, 0));
-        PUT(FTRP(bp), PACK(csize - asize, 0));
+        
+        // 다음 블록 위치 계산 (원래 크기 csize를 사용)
+        void *next_bp = (char *)bp + asize;
+        
+        // 남은 공간을 새로운 가용 블록으로 설정
+        PUT(HDRP(next_bp), PACK(csize - asize, 0));
+        // 푸터 위치를 직접 계산 (next_bp + (csize - asize) - DSIZE)
+        PUT((char *)next_bp + (csize - asize) - DSIZE, PACK(csize - asize, 0));
     // 분할이 불가능한 경우 그냥 통째로 할당함
     } else {
         PUT(HDRP(bp), PACK(csize, 1));
@@ -228,6 +261,8 @@ int mm_init(void)
     PUT(heap_listp + (2 * WSIZE), PACK(DSIZE, 1));
     PUT(heap_listp + (3 * WSIZE), PACK(0, 1));
     heap_listp += (2 * WSIZE);
+    
+    rover = heap_listp;
 
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE / WSIZE) == NULL) {
@@ -243,16 +278,6 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
-    // int newsize = ALIGN(size + SIZE_T_SIZE);
-    // void *p = mem_sbrk(newsize);
-    // if (p == (void *)-1)
-    //     return NULL;
-    // else
-    // {
-    //     *(size_t *)p = size;
-    //     return (void *)((char *)p + SIZE_T_SIZE);
-    // }
-
     size_t asize;
     size_t extendsize;
     char *bp;
