@@ -45,7 +45,7 @@ team_t team = {
 /* Basic constants and macros */
 #define WSIZE 4 // 워드 크기 4 바이트
 #define DSIZE 8 // 더블 워드 크기 8 바이트
-#define CHUNKSIZE (1 << 12) // 힙을 확장할 때 기본 크기 4096 바이트
+#define CHUNKSIZE (1 << 6) // 힙을 확장할 때 기본 크기 4096 바이트
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y)) // 걍 뭐 둘 중에 더 큰거 반환
 
