@@ -65,8 +65,8 @@ team_t team = {
 #define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE) // 블록 포인터로부터 푸터 위치
 
 /* Given block ptr bp, compute address of next and previous blocks */
-#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE))) // 다음 블록의 포인터
-#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE))) // 다음 블록의 포인터
+#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
+#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
 
 /* Global variables */
 static char *heap_listp = 0; // 힙의 시작을 가리키는 포인터
@@ -193,29 +193,28 @@ static void *extend_heap(size_t words) {
 static void *find_fit(size_t asize) {
     void *bp;
     
-    // rover가 NULL이거나 초기화되지 않은 경우, heap_listp부터 시작
-    if (rover == NULL) {
+    // rover가 초기화되지 않았거나 NULL인 경우, 힙의 시작점부터 검색
+    if (rover == NULL || rover == 0) {
         rover = heap_listp;
     }
     
-    // 첫 번째 패스: rover 위치부터 끝까지 검색
+    // 첫 번째 패스: rover 위치부터 힙의 끝까지 검색
     for (bp = rover; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
-            rover = NEXT_BLKP(bp); // 다음 검색을 위해 rover 업데이트
+            rover = bp; // 다음 검색을 위해 rover 업데이트
             return bp;
         }
     }
     
-    // 두 번째 패스: 시작부터 rover 위치까지 검색
+    // 두 번째 패스: 힙의 시작부터 rover 위치까지 검색
     for (bp = heap_listp; bp < rover; bp = NEXT_BLKP(bp)) {
         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
-            rover = NEXT_BLKP(bp); // 다음 검색을 위해 rover 업데이트
+            rover = bp; // 다음 검색을 위해 rover 업데이트
             return bp;
         }
     }
     
     // 적합한 블록을 찾지 못한 경우
-    rover = heap_listp; // rover를 초기 위치로 리셋
     return NULL;
 }
 
@@ -231,14 +230,11 @@ static void place(void *bp, size_t asize) {
         // 앞 부분은 요청된 크기로 할당 처리함
         PUT(HDRP(bp), PACK(asize, 1));
         PUT(FTRP(bp), PACK(asize, 1));
-        
-        // 다음 블록 위치 계산 (원래 크기 csize를 사용)
-        void *next_bp = (char *)bp + asize;
-        
-        // 남은 공간을 새로운 가용 블록으로 설정
-        PUT(HDRP(next_bp), PACK(csize - asize, 0));
-        // 푸터 위치를 직접 계산 (next_bp + (csize - asize) - DSIZE)
-        PUT((char *)next_bp + (csize - asize) - DSIZE, PACK(csize - asize, 0));
+        // 다음 블록 위치로 이동
+        bp = NEXT_BLKP(bp);
+        // 남은 공간을 새로운 사용 블록으로 설정
+        PUT(HDRP(bp), PACK(csize - asize, 0));
+        PUT(FTRP(bp), PACK(csize - asize, 0));
     // 분할이 불가능한 경우 그냥 통째로 할당함
     } else {
         PUT(HDRP(bp), PACK(csize, 1));
@@ -261,7 +257,7 @@ int mm_init(void)
     PUT(heap_listp + (2 * WSIZE), PACK(DSIZE, 1));
     PUT(heap_listp + (3 * WSIZE), PACK(0, 1));
     heap_listp += (2 * WSIZE);
-    
+
     rover = heap_listp;
 
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
@@ -326,7 +322,11 @@ void mm_free(void *ptr)
     PUT(HDRP(ptr), PACK(size, 0));
     PUT(FTRP(ptr), PACK(size, 0));
     // 그러고 앞/뒤 확인하고 케이스에 맞게 가용 블럭을 병합한다.
-    coalesce(ptr);
+    void *coalesced_ptr = coalesce(ptr);
+
+    if (coalesced_ptr < rover) {
+        rover = coalesced_ptr;
+    }
 }
 
 /*
